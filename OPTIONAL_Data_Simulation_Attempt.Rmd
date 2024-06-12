@@ -1,0 +1,130 @@
+---
+title: "week_4_prereq"
+author: "Zeren Konuksay"
+date: "2024-05-15"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(tidyverse)
+library(papaja)
+```
+
+## Implicit Association Task
+
+### Dataset 2 Cover Story
+
+A typical finding in social psychology is that in-group members are more easily associated with good things and out-group members with bad things. This has often been studied using the Implicit Association Test (IAT), where participants are typically classify to classify positive words when preceded by a picture of an in-group member than an out-group member, and vice versa. The aim of this IAT experiment was to examine the nature of this effect. On each trial, Caucasian participants were presented with a word (e.g., WAR or PEACE), and were instructed to indicate as quickly as possible (without compromising on accuracy) whether this word had a positive or negative valence. Crucially, each word was presented by a picture of either a white (in-group) or a black (out-group) person, for 200 ms. The decision accuracy and response time (i.e., time between word onset and button press) were recorded as outcome parameters. Based on previous studies, all trials were divided in two conditions: Compatible (in-group + positive word trials; and out-group + negative word trials) and Incompatible trials (in-group + negative word trials; and out-group + positive word trials). The key question of this experiment was whether in-group vs. out-group pictures would differently affect word-classification performance, and if so, whether this was due to altered sensory evidence accumulation (reflected in drift rate), response cautiousness (reflected in the threshold), or response bias (reflected in starting point of the accumulation process). Condition 1 = incompatible, condition 2 = compatible
+
+### Making the DDM
+
+outcome variables are reaction time and accuracy
+
+condition=1 incompatible, condition 2= compatible
+
+z=starting point (response bias)
+
+```{r drift diffusion model function}
+
+iat_ddm<-function(drift_rate, z, threshold, condition, noise_sd=1){
+  #initializing starting location
+  time<-0
+  act<-z
+  #accumulate evidence
+    while(abs(act)<abs(threshold)&(act>0)){
+    act<-act+drift_rate+rnorm(1, mean=0, sd=noise_sd)
+    time<-time+1
+  }
+  #returning results
+  rt=time/100
+  results<-list(rt=time,correct=ifelse(act>threshold, "1","0"), condition=ifelse(condition=="incompatible", "incompatible", "compatible"))
+  return(results)
+}
+
+```
+
+### Data Simulation
+
+The parameters need to be changed as per literature
+
+set the variables for participant and trial numbers and create data frames for the data to be logged in.
+
+```{r data simulation initializing}
+parnum<-15
+trialnum<-500
+incontrialnum<-250
+contrialnum<-250
+compresults<-data.frame(matrix(nrow=contrialnum*parnum, ncol=7, dimnames=list(NULL, c("participant", "condition", "time", "correct","drift.rate", "starting.point", "threshold"))))
+
+incompresults<-data.frame(matrix(nrow=incontrialnum*parnum, ncol=7, dimnames=list(NULL, c("participant", "condition", "time", "correct","drift.rate", "starting.point", "threshold"))))
+```
+
+Coding the Within subject differences into the DDM: making the different parameters for congruent/incongruent trials
+
+```{r for loop data simulation}
+
+for (i in 1:parnum) {
+  #generate parameters
+  dist_thresh <- rnorm(1, mean = 1, sd = 0.1)
+  dist_z <- rnorm(1, mean = 0.5, sd = 0.1)
+  dist_drift_rate <- rnorm(1, mean = 0.05, sd = 0.1)
+  
+  slow_drift <- runif(1, min = 0.1, max = 1)
+  increase_thresh <- runif(1, min = 1, max = 2)
+  add_bias <- runif(1, min = -0.1, max = 0.1)
+  
+  for (j in 1:incontrialnum) {
+    dist_thresh <- dist_thresh * slow_drift
+    dist_z <- dist_z + add_bias
+    dist_drift_rate <- dist_drift_rate * slow_drift
+    incomptrialresults <- iat_ddm(drift_rate = dist_drift_rate, z = dist_z, threshold = dist_thresh, condition = "incompatible")
+    row_index <- (i - 1) * incontrialnum + j
+    incompresults[row_index, "participant"] <- i
+    incompresults[row_index, "condition"] <- "incompatible"
+    incompresults[row_index, "time"] <- incomptrialresults$rt
+    incompresults[row_index, "correct"] <- incomptrialresults$correct
+    incompresults[row_index, "drift.rate"] <- dist_drift_rate
+    incompresults[row_index, "starting.point"] <- dist_z
+    incompresults[row_index, "threshold"] <- dist_thresh
+  }
+  for (k in 1:contrialnum) {
+    comptrialresults <- iat_ddm(drift_rate = dist_drift_rate, z = dist_z, threshold = dist_thresh, condition = "compatible")
+    row_index <- (i - 1) * contrialnum + k
+    compresults[row_index, "participant"] <- i
+    compresults[row_index, "condition"] <- "compatible"
+    compresults[row_index, "time"] <- comptrialresults$rt
+    compresults[row_index, "correct"] <- comptrialresults$correct
+    compresults[row_index, "drift.rate"] <- dist_drift_rate
+    compresults[row_index, "starting.point"] <- dist_z
+    compresults[row_index, "threshold"] <- dist_thresh  
+  }
+}
+```
+
+Combine the two data frames with the separate conditions into one.
+
+```{r final simulated data frame}
+results_matrix<-rbind(compresults,incompresults)
+
+```
+
+Visualize the distribution of the simulated data.
+
+```{r distribution histogram}
+ddm_time <- results_matrix[,1]
+ddm_time <- as.numeric(ddm_time)
+ddm_hist <- ggplot(data = data.frame(ddmtime = ddm_time), aes(x = ddmtime)) +
+  geom_histogram(binwidth = 4, fill = "skyblue3", color="deepskyblue4") +
+  labs(title = "Simulation Histogram", x = "Response Times", y = "Frequency")+
+  theme_apa()
+print(ddm_hist)
+```
+
+### Save the Data Frame as CSV
+
+To be done after the parameters are fixed
+
+```{r csv file conversion}
+write.csv(results_matrix, file = "iat_data_simulation_w4_v1.csv", row.names = FALSE)
+```
