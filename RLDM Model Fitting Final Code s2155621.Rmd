@@ -1,0 +1,360 @@
+---
+title: "RLDM Final Report Code s2155621"
+author: "Zeren Konuksay"
+date: "2024-06-11"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Reinforcement Learning and Decision Making: Model Fitting
+
+This R markdown file is adapted from the fit_framework provided for the course with the code used to complete the final report and poster.
+
+### Cover Story 2
+
+A typical finding in social psychology is that in-group members are more easily associated with good things and out-group members with bad things. This has often been studied using the Implicit Association Test (IAT), where participants are typically classify to classify positive words when preceded by a picture of an in-group member than an out-group member, and vice versa. The aim of this IAT experiment was to examine the nature of this effect. On each trial, Caucasian participants were presented with a word (e.g., WAR or PEACE), and were instructed to indicate as quickly as possible (without compromising on accuracy) whether this word had a positive or negative valence. Crucially, each word was presented by a picture of either a white (in-group) or a black (out-group) person, for 200 ms. The decision accuracy and response time (i.e., time between word onset and button press) were recorded as outcome parameters. Based on previous studies, all trials were divided in two conditions: Compatible (in-group + positive word trials; and out-group + negative word trials) and Incompatible trials (in-group + negative word trials; and out-group + positive word trials). The key question of this experiment was whether in-group vs. out-group pictures would differently affect word-classification performance, and if so, whether this was due to altered sensory evidence accumulation (reflected in drift rate), response cautiousness (reflected in the threshold), or response bias (reflected in starting point of the accumulation process).
+
+Condition 1 = incompatible, condition 2 = compatible
+
+### Initialization and Visual Inspection
+
+This section of the code is concerned with initializing the different functions that will be used and loading and viewing the data set of the associated cover story.
+
+```{r loading functions and data}
+
+#load functions
+
+library('ggplot2')
+source('helper_functions.r')
+library(papaja)
+library(tidyverse)
+library(readr)
+library(dplyr)
+
+#load and view dataset
+
+rawdata <- read_csv("dataset2.csv")
+View(rawdata)
+```
+
+### Sample size and number of trials
+
+```{r N and trial count}
+
+#checking the number of subjects in the data set
+
+N <- length(unique(rawdata$ID))
+print(N)
+```
+
+Sample size is 12, and there are 800 trials per participant with 400 compatible and 400 incompatible. The total number of trials is 9600
+
+### Distribution of the Data
+
+```{r raw data distribution}
+
+#code the columns "condition" and "correct" as factors to be able to visualize them using ggplot
+
+rawdata$condition<-factor(rawdata$condition)
+rawdata$correct<-factor(rawdata$correct)
+
+#generate a histogram depicting the distribution of reaction times for the raw data
+
+rt_histogram <- ggplot(data = rawdata, aes(x = rawdata$rt)) +
+  geom_histogram(binwidth = 4) +
+  labs(title = "Reaction time distribution", x = "Response Times", y = "Frequency")+
+  theme_apa()+
+  xlim(0,2000) +
+  theme(
+    plot.title = element_text(size = 20),    # Title text size
+    axis.title.x = element_text(size = 15),  # X-axis title text size
+    axis.title.y = element_text(size = 15),  # Y-axis title text size
+    axis.text.x = element_text(size = 12),   # X-axis text size
+    axis.text.y = element_text(size = 12),   # Y-axis text size
+    legend.title = element_text(size = 15),  # Legend title text size
+    legend.text = element_text(size = 12)    # Legend text size
+  )
+
+print(rt_histogram)
+
+```
+
+### Removing extreme values
+
+Extreme values were decided based on the 1.5 Inter Quartile Rule, observations that fall 1.5\*IQR below the 1st quartile or 1.5\*IQR above the 3rd quartile are deemed outliers.
+
+```{r outliers}
+
+rawdata$rt<-as.numeric(rawdata$rt)
+Q1 <- quantile(rawdata$rt, 0.25) #define 1st quartile
+Q3 <- quantile(rawdata$rt, 0.75) #define 3rd quartile
+IQR <- Q3 - Q1 #define interquartile range
+lower_bound <- Q1 - 1.5 * IQR #define bounds for outliers
+upper_bound <- Q3 + 1.5 * IQR
+dat_filtered <- rawdata %>% filter(rawdata$rt >= lower_bound & rawdata$rt <= upper_bound) #remove outliers
+
+
+```
+
+### Data visualization per condition and correctness
+
+The code below generates overlaid frequency distributions of reaction times. The first plot maps correct and incorrect trials, the second plot maps compatible and incompatible trials, and the third plot maps the distribution of compatible and incompatible trials for only the correct trials.
+
+```{r adjusted data visualization}
+
+# correct and incorrect answer distribution
+ggplot(dat_filtered, aes(x=rt, fill=correct)) + geom_histogram(binwidth=3, alpha=.5, position="identity")+scale_fill_manual(values=c("red", "forestgreen"))+theme_apa()+labs(title = "Reaction time distribution of correct and incorrect trials", x = "Response Times", y = "Frequency") +
+  theme(
+    plot.title = element_text(size = 20),    # Title text size
+    axis.title.x = element_text(size = 15),  # X-axis title text size
+    axis.title.y = element_text(size = 15),  # Y-axis title text size
+    axis.text.x = element_text(size = 12),   # X-axis text size
+    axis.text.y = element_text(size = 12),   # Y-axis text size
+    legend.title = element_text(size = 15),  # Legend title text size
+    legend.text = element_text(size = 12)    # Legend text size
+  )
+
+#reaction time distribution by condition
+
+ggplot(dat_filtered, aes(x=rt, fill=condition)) +
+  geom_histogram(binwidth=3, alpha=.5, position="identity") +
+  theme_apa() +
+  scale_fill_manual(values=c("skyblue3", "purple4"), name = "Conditions", labels = c("incompatible", "compatible")) +
+  labs(title = "Reaction time distribution of congruent and incongruent trials", x = "Response Times", y = "Frequency") +
+  theme(
+    plot.title = element_text(size = 20),    # Title text size
+    axis.title.x = element_text(size = 15),  # X-axis title text size
+    axis.title.y = element_text(size = 15),  # Y-axis title text size
+    axis.text.x = element_text(size = 12),   # X-axis text size
+    axis.text.y = element_text(size = 12),   # Y-axis text size
+    legend.title = element_text(size = 15),  # Legend title text size
+    legend.text = element_text(size = 12)    # Legend text size
+  )
+
+#reaction time distribution by condition for only the correct trials
+
+dat_filtered_corr <- dat_filtered[dat_filtered$correct == 1, ]
+
+ggplot(dat_filtered_corr, aes(x=rt, fill=condition)) +
+  geom_histogram(binwidth=3, alpha=.5, position="identity")+theme_apa()+scale_fill_manual(values=c("skyblue3", "purple4"),name = "Conditions", labels = c("incompatible", "compatible"))+labs(title = "Reaction time distribution of congruent and incongruent trials", x = "Response Times", y = "Frequency") +
+  theme(
+    plot.title = element_text(size = 20),    # Title text size
+    axis.title.x = element_text(size = 15),  # X-axis title text size
+    axis.title.y = element_text(size = 15),  # Y-axis title text size
+    axis.text.x = element_text(size = 12),   # X-axis text size
+    axis.text.y = element_text(size = 12),   # Y-axis text size
+    legend.title = element_text(size = 15),  # Legend title text size
+    legend.text = element_text(size = 12)    # Legend text size
+  )
+
+
+```
+
+### Significance testing for reaction times and accuracy between the conditions
+
+The following code shows if there are significant differences between compatible and incompatible conditions of the IAT with regards to accuracy or response times.
+
+```{r rt and accuracy t tests}
+
+#make condition and correct be coded as analysis to be able to run the t tests
+dat_filtered$condition <- as.numeric(as.character(dat_filtered$condition))
+dat_filtered$correct <- as.numeric(as.character(dat_filtered$correct))
+
+#make correct trials also numeric
+dat_filtered_corr <- dat_filtered[dat_filtered$correct == 1, ]
+
+#aggregate the data
+df_median <- aggregate(rt ~ ID + condition, data = dat_filtered_corr, FUN = median)
+df_acc <- aggregate(correct ~ ID + condition, data = dat_filtered, FUN = mean)
+df_aggregated <- cbind(df_median["ID"], df_median["condition"], df_median["rt"], df_acc["correct"])
+
+##REACTION TIME
+
+#aggregate standard deviations for response time
+rt_sds <- aggregate(rt ~ condition, data = df_aggregated, FUN = sd)
+
+#conduct a paired t test for reaction times
+rt_t_test <- t.test(df_aggregated$rt ~ df_aggregated$condition, paired = TRUE, alternative = "greater")
+print(rt_t_test)
+
+#summarize the medians and standard deviations of the reaction times
+rt_summary <- df_aggregated %>%
+  group_by(condition) %>%
+  summarise(
+    median_rt = median(rt, na.rm = TRUE),
+    sd_rt = sd(rt, na.rm = TRUE)
+  )
+print(rt_summary)
+
+##ACCURACY
+#aggregate mean accuracy and standard deviations
+acc_means <- aggregate(correct ~ condition, data = df_aggregated, FUN = mean)
+acc_sds <- aggregate(correct ~ condition, data = df_aggregated, FUN = sd)
+
+#conduct paired t test for accuracy
+acc_t_test <- t.test(df_aggregated$correct ~ df_aggregated$condition, paired = TRUE, alternative = "greater")
+print(acc_t_test)
+
+#summarize the medians and standard deviations of the accuracy
+acc_summary <- df_aggregated %>%
+  group_by(condition) %>%
+  summarise(
+    mean_acc = mean(correct, na.rm = TRUE),
+    sd_acc = sd(correct, na.rm = TRUE)
+  )
+print(acc_summary)
+
+```
+
+### Fitting the DDM Model per participant and condition
+
+This section of the code creates a data frame for the DDM parameters to be coded into, and loops the data fitting process per condition and subject to get the parameters using the fit_data() function
+
+```{r DDM fitting}
+
+#create final data frame
+
+final_df <- data.frame(ID = numeric(),
+                       condition = numeric(),
+                       s = numeric(),
+                       A = numeric(),
+                       ter = numeric(),
+                       b = numeric(),
+                       v1 = numeric())
+
+#model fitting: extract parameters and code them into final data frame per subject and condition loop
+
+for (subj in 1:N) {#subject loop
+  for (cond in 1:2) {#condition loop
+    parameters <- fit_data(dat_filtered[dat_filtered$ID == subj & dat_filtered$condition == cond, ]) 
+    final_df[nrow(final_df) + 1, ] <- unlist(c(subj, cond, parameters))
+  }
+}
+```
+
+### Parameter significance tests
+
+From the fitting framework provided in the course:
+
+**"s" SD of drift rates:** This reflects variability in drift rates. However, as this parameter does not have an easily interpretable cognitive mapping, this parameter does not significantly differ between conditions in the provided data sets.
+
+**"A" upper limit of starting point:** This reflects the starting point of the evidence accumulation process. It reflects bias or expectations for one choice.
+
+**"ter" non-decision time:** This reflects the time necessary for processes that are not related to evidence integration. For example, the time it takes for activation of the motor cortex to result in the hand pressing the response button, or the time it takes for visual information to get from the stimulus to the visual cortex.
+
+**"b" threshold:** The distance from 0 to the threshold. It reflects cautiousness: lower thresholds lead to faster responses but a higher error rate.
+
+**"v1" drift rate:** The quality of the evidence or difficulty of the problem. Higher drift rates lead to faster and more accurate responses.
+
+This code tests for differences per conditions for all the free parameters
+
+```{r DDM free parameter significance tests}
+
+#BIAS
+#Aggregate bias means and sds
+A_means <- aggregate(A ~ condition, data = final_df, FUN = mean)
+A_sds <- aggregate(A ~ condition, data = final_df, FUN = sd)
+
+#bias t test
+A_t_test <- t.test(final_df$A ~ final_df$condition, paired = TRUE)
+print(A_t_test)
+
+
+#BOUNDARY THRESHOLD
+#Aggregate boundary threshold means and sds
+b_means <- aggregate(b ~ condition, data = final_df, FUN = mean)
+b_sds <- aggregate(b ~ condition, data = final_df, FUN = sd)
+
+#boundary threshold t test
+b_t_test <- t.test(final_df$b ~ final_df$condition, paired = TRUE)
+print(b_t_test)
+
+
+#DRIFT RATE
+#Aggregate drift rate means and sds
+v1_means <- aggregate(v1 ~ condition, data = final_df, FUN = mean)
+v1_sds <- aggregate(v1 ~ condition, data = final_df, FUN = sd)
+
+#drift rate t test
+v1_t_test <- t.test(final_df$v1 ~ final_df$condition, paired = TRUE)
+print(v1_t_test)
+
+
+#DRIFT RATE SD
+#Aggregate drift rate sd means and sds
+s_means <- aggregate(s ~ condition, data = final_df, FUN = mean)
+s_sds <- aggregate(s ~ condition, data = final_df, FUN = sd)
+
+#drift rate sd t test
+s_t_test <- t.test(final_df$s ~ final_df$condition, paired = TRUE)
+print(s_t_test)
+
+
+#NON-DECISION TIME
+#Aggregate non-decision time means and sds
+ter_means <- aggregate(ter ~ condition, data = final_df, FUN = mean)
+ter_sds <- aggregate(ter ~ condition, data = final_df, FUN = sd)
+
+#non-decision time t test
+ter_t_test <- t.test(final_df$ter ~ final_df$condition, paired = TRUE)
+print(ter_t_test)
+```
+
+### Parameter box plots
+
+Differences in the DDM free parameters in the different IAT conditions can be visualized using box plots. The following code shows the box plots for all the parameters in the same graph.
+
+```{r DDM free parameter visualization}
+
+#make a data frame in long format to use for the box plots
+long_final_df <- pivot_longer(final_df, cols = c(s, A, ter, b, v1), 
+                       names_to = "Parameter", values_to = "Value")
+
+#make condition a factor to be able to make a plot
+long_final_df$condition<-as.factor(long_final_df$condition)
+
+#generate box plots for all DDM free parameters in one graph using facet wrap
+ggplot(long_final_df, aes(x = factor(condition), y = Value, fill = condition)) +
+  geom_boxplot() +
+  facet_wrap(~ Parameter, scales = "free") +
+  labs(title = "Box Plots of Parameters by Condition",
+       x = "Condition",
+       y = "Value") +
+  scale_fill_manual(values = c("1"= "skyblue3", "2"="purple1")) +
+  theme_apa()
+```
+
+### RT and Accuracy line graphs
+
+With the aggregated data it is possible to visualize the individual differences in response times and accuracy per participant. These graphs serve that purpose.
+
+```{r rt and accuracy visualization on aggregated data}
+
+#Line graph for reaction time variability between conditions per participant
+
+df_aggregated$condition <- factor(df_aggregated$condition, levels = c("1", "2"))
+ggplot(df_aggregated, aes(x = condition, y = rt, group = ID, color = as.factor(ID))) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Reaction Times by Condition",
+       x = "Condition",
+       y = "Reaction Time",
+       color = "Participant") +
+  theme_apa()
+
+#Line graph for accuracy variability between conditions per participant
+
+ggplot(df_aggregated, aes(x = condition, y = correct, group = ID, color = as.factor(ID))) +
+  geom_line() +
+  geom_point() +
+  labs(title = "Accuracy by Condition",
+       x = "Condition",
+       y = "Accuracy",
+       color = "Participant") +
+  theme_apa()
+
+
+```
